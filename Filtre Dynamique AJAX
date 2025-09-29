@@ -1,0 +1,80 @@
+// --- DEBUT DU CODE POUR LE FILTRE DYNAMIQUE AJAX ---
+
+function iaflux_load_ajax_scripts() {
+    // On charge notre nouveau script JS, mais seulement sur la page d'archive
+    if ( is_post_type_archive('creation') ) {
+        wp_enqueue_script(
+            'iaflux-ajax-filter', 
+            get_stylesheet_directory_uri() . '/iaflux-ajax-filter.js', 
+            array('jquery'), // On se base sur jQuery qui est inclus dans WordPress
+            null, 
+            true
+        );
+        
+        // On passe des variables de PHP à notre JavaScript (très important pour la sécurité et l'URL)
+        wp_localize_script( 'iaflux-ajax-filter', 'iaflux_ajax_obj', array(
+            'ajax_url' => admin_url( 'admin-ajax.php' ),
+            'nonce'    => wp_create_nonce( 'iaflux_ajax_nonce' )
+        ));
+    }
+}
+add_action( 'wp_enqueue_scripts', 'iaflux_load_ajax_scripts' );
+
+// La fonction qui gère la requête AJAX
+function iaflux_ajax_filter_handler() {
+    // Sécurité : on vérifie le "nonce"
+    check_ajax_referer( 'iaflux_ajax_nonce', 'nonce' );
+
+    $args = array(
+        'post_type'      => 'creation',
+        'posts_per_page' => -1, // On les veut tous
+    );
+    
+    // On construit la 'meta_query' pour le filtre par modèle
+    $meta_query = array();
+    if ( isset($_POST['modele']) && !empty($_POST['modele']) ) {
+        $meta_query[] = array(
+            'key'     => 'modele_utilise',
+            'value'   => sanitize_text_field($_POST['modele']),
+            'compare' => '=',
+        );
+    }
+
+    // On ajoute la recherche par mot-clé (s)
+    if ( isset($_POST['search']) && !empty($_POST['search']) ) {
+        $args['s'] = sanitize_text_field($_POST['search']);
+    }
+    
+    // On applique la meta_query si elle n'est pas vide
+    if ( !empty($meta_query) ) {
+        $args['meta_query'] = $meta_query;
+    }
+
+    $ajax_query = new WP_Query( $args );
+
+    if ( $ajax_query->have_posts() ) {
+        while ( $ajax_query->have_posts() ) {
+            $ajax_query->the_post();
+            
+            $image = get_field('image_de_la_creation');
+            $post_url = get_permalink();
+            
+            if( !empty($image) ): ?>
+                <div class="iaflux-gallery-item">
+                    <a href="<?php echo esc_url($post_url); ?>">
+                        <img src="<?php echo esc_url($image['url']); ?>" alt="<?php echo esc_attr($image['alt']); ?>" />
+                    </a>
+                </div>
+            <?php endif;
+        }
+    } else {
+        echo '<p class="iaflux-no-results">Désolé, aucune création ne correspond à votre recherche.</p>';
+    }
+
+    wp_die(); // Indispensable pour terminer proprement une requête AJAX dans WordPress
+}
+// On "branche" notre fonction sur les hooks AJAX de WordPress
+add_action( 'wp_ajax_iaflux_filter', 'iaflux_ajax_filter_handler' );
+add_action( 'wp_ajax_nopriv_iaflux_filter', 'iaflux_ajax_filter_handler' ); // nopriv = pour les utilisateurs non connectés
+
+// --- FIN DU CODE POUR LE FILTRE DYNAMIQUE AJAX ---
